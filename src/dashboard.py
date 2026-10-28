@@ -2,6 +2,7 @@ import pandas as pd
 import streamlit as st
 import plotly.express as px
 import psycopg
+from streamlit.errors import StreamlitSecretNotFoundError
 
 st.set_page_config(
     page_title="Job Market Skills Tracker",
@@ -12,23 +13,37 @@ st.set_page_config(
 st.title("📊 Job Market Skills Tracker")
 st.caption("Explore detected skills in Data Engineer job postings")
 
-
-
 def get_connection():
+    try:
+        database_url = st.secrets["DATABASE_URL"]
+    except (StreamlitSecretNotFoundError, KeyError):
+        st.error(
+            "The DATABASE_URL secret is missing. Add it to the app's "
+            "Streamlit secrets, then redeploy."
+        )
+        st.stop()
+
     return psycopg.connect(
-        st.secrets["DATABASE_URL"],
+        database_url,
         connect_timeout=10
     )
+
 
 @st.cache_data(ttl=60)
 def load_data():
     with get_connection() as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT COUNT(*) FROM jobs;")
-            total_jobs = cur.fetchone()[0]
+            jobs_result = cur.fetchone()
+            if jobs_result is None:
+                raise RuntimeError("The jobs count query returned no result.")
+            total_jobs = jobs_result[0]
 
             cur.execute("SELECT COUNT(*) FROM skills;")
-            total_skills = cur.fetchone()[0]
+            skills_result = cur.fetchone()
+            if skills_result is None:
+                raise RuntimeError("The skills count query returned no result.")
+            total_skills = skills_result[0]
 
         summary = pd.read_sql("""
             SELECT
@@ -100,9 +115,17 @@ try:
     )
 
 
-except Exception as e:
-    st.error("Unable to load dashboard data.")
-    st.error(f"Error type: {type(e).__name__}")
-
-    st.info("Check the application logs for troubleshooting.")
-
+except psycopg.errors.UndefinedTable:
+    st.error(
+        "The database is missing a required table. Run "
+        "`src/schema.sql` against the deployment database, then refresh."
+    )
+except psycopg.OperationalError as error:
+    st.error(
+        "Unable to connect to the database. Verify DATABASE_URL, the "
+        "database's availability, and its network access settings."
+    )
+    st.exception(error)
+except psycopg.Error as error:
+    st.error("The database rejected a dashboard query.")
+    st.exception(error)
