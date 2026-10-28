@@ -1,17 +1,8 @@
 
-import os
 import pandas as pd
 import streamlit as st
 import plotly.express as px
 import psycopg
-from dotenv import load_dotenv
-
-load_dotenv()
-
-DB_NAME = "job_tracker"
-DB_USER = os.getenv("PGUSER") or os.getenv("USER") or "postgres"
-DB_HOST = os.getenv("PGHOST", "localhost")
-DB_PORT = os.getenv("PGPORT", "5432")
 
 st.set_page_config(
     page_title="Job Market Skills Tracker",
@@ -22,23 +13,24 @@ st.set_page_config(
 st.title("📊 Job Market Skills Tracker")
 st.caption("Explore detected skills in Data Engineer job postings")
 
+
+
+def get_connection():
+    return psycopg.connect(
+        st.secrets["postgresql://neondb_owner:npg_N8HOPAyw6ekC@ep-rapid-bar-b3bgpyzj-pooler.c-4.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"],
+        connect_timeout=10
+    )
+
+
 @st.cache_data(ttl=60)
 def load_data():
-    with psycopg.connect(
-        dbname=DB_NAME,
-        user=DB_USER,
-        host=DB_HOST,
-        port=DB_PORT
-    ) as conn:
-        jobs = pd.read_sql(
-            "SELECT COUNT(*) AS total_jobs FROM jobs;",
-            conn
-        ).iloc[0, 0]
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT COUNT(*) FROM jobs;")
+            total_jobs = cur.fetchone()[0]
 
-        skills = pd.read_sql(
-            "SELECT COUNT(*) AS total_skills FROM skills;",
-            conn
-        ).iloc[0, 0]
+            cur.execute("SELECT COUNT(*) FROM skills;")
+            total_skills = cur.fetchone()[0]
 
         summary = pd.read_sql("""
             SELECT
@@ -51,55 +43,68 @@ def load_data():
             ORDER BY job_count DESC, s.skill_name;
         """, conn)
 
-    if jobs:
+    if total_jobs:
         summary["percentage"] = (
-            summary["job_count"] / jobs * 100
+            summary["job_count"] / total_jobs * 100
         ).round(1)
     else:
         summary["percentage"] = 0.0
 
-    return jobs, skills, summary
+    return total_jobs, total_skills, summary
 
 
 try:
     total_jobs, total_skills, summary = load_data()
 
+    total_relationships = int(summary["job_count"].sum())
+
     col1, col2, col3 = st.columns(3)
 
     col1.metric("Total Jobs", total_jobs)
     col2.metric("Unique Skills", total_skills)
-    col3.metric(
-        "Skill Relationships",
-        int(summary["job_count"].sum())
-    )
+    col3.metric("Skill Relationships", total_relationships)
 
     st.subheader("Top Demanded Skills")
 
     top_skills = summary.head(10)
 
-    fig = px.bar(
-        top_skills.sort_values("job_count"),
-        x="job_count",
-        y="skill",
-        orientation="h",
-        text="job_count",
-        labels={
-            "job_count": "Number of Jobs",
-            "skill": "Skill"
-        },
-        title="Skills by Number of Job Postings"
-    )
+    if not top_skills.empty:
+        chart_data = top_skills.sort_values("job_count")
 
-    fig.update_layout(yaxis_title=None)
-    st.plotly_chart(fig, use_container_width=True)
+        fig = px.bar(
+            chart_data,
+            x="job_count",
+            y="skill",
+            orientation="h",
+            text="job_count",
+            labels={
+                "job_count": "Number of Jobs",
+                "skill": "Skill"
+            },
+            title="Skills by Number of Job Postings"
+        )
+
+        fig.update_layout(yaxis_title=None)
+
+        st.plotly_chart(
+            fig,
+            width="stretch"
+        )
+    else:
+        st.info("No detected skills are available yet.")
 
     st.subheader("Skill Summary")
+
     st.dataframe(
         summary,
-        use_container_width=True,
+        width="stretch",
         hide_index=True
     )
 
-except Exception as e:
-    st.error("Unable to load dashboard data.")
-    st.exception(e)
+except Exception:
+    st.error(
+        "Unable to load dashboard data. "
+        "Please try again later."
+    )
+    st.info("Check the application logs for troubleshooting.")
+
