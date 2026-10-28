@@ -17,7 +17,7 @@ st.caption("Explore detected skills in Data Engineer job postings")
 
 def get_connection():
     return psycopg.connect(
-        st.secrets["postgresql://neondb_owner:npg_N8HOPAyw6ekC@ep-rapid-bar-b3bgpyzj-pooler.c-4.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"],
+        st.secrets["DATABASE_URL"],
         connect_timeout=10
     )
 
