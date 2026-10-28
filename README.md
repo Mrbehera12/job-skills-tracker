@@ -20,8 +20,9 @@ DATABASE_URL = "postgresql://USER:PASSWORD@HOST:5432/DATABASE?sslmode=require"
 
 For Streamlit Community Cloud, select `streamlit_app.py` as the app file and
 add the same `DATABASE_URL` value in the app's **Settings → Secrets**. The
-database must be reachable from the deployment and contain the dashboard
-tables. To create those tables in a new database, run `src/schema.sql` against
-that database. Loading job data and skill relationships is a separate step;
-the dashboard can run with empty tables, but it will have no job or skill data
-to display.
+database must be reachable from the deployment, and its user must be allowed
+to create tables. The dashboard creates its tables in the `public` schema on
+first load. If the database user cannot create tables, run `src/schema.sql`
+from the database provider's SQL editor as the database owner. Creating the
+tables does not load job data or skill relationships; the dashboard can run
+with empty tables, but it will have no job or skill data to display.
