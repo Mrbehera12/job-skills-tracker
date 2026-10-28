@@ -99,10 +99,10 @@ try:
         hide_index=True
     )
 
-except Exception:
-    st.error(
-        "Unable to load dashboard data. "
-        "Please try again later."
-    )
+
+except Exception as e:
+    st.error("Unable to load dashboard data.")
+    st.error(f"Error type: {type(e).__name__}")
+
     st.info("Check the application logs for troubleshooting.")
 
