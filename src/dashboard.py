@@ -4,6 +4,18 @@ import plotly.express as px
 import psycopg
 from streamlit.errors import StreamlitSecretNotFoundError
 
+REQUIRED_TABLES = ("jobs", "skills", "job_skills")
+
+
+class MissingDatabaseTablesError(RuntimeError):
+    def __init__(self, database: str, schema: str, missing_tables: list[str]):
+        missing = ", ".join(missing_tables)
+        super().__init__(
+            f"Database '{database}', schema '{schema}' is missing: {missing}. "
+            "Run src/schema.sql against this exact database, then refresh."
+        )
+
+
 st.set_page_config(
     page_title="Job Market Skills Tracker",
     page_icon="📊",
@@ -33,6 +45,28 @@ def get_connection():
 def load_data():
     with get_connection() as conn:
         with conn.cursor() as cur:
+            cur.execute("SELECT current_database(), current_schema();")
+            connection_info = cur.fetchone()
+            if connection_info is None:
+                raise RuntimeError("Could not identify the connected database.")
+            database, schema = connection_info
+
+            cur.execute(
+                """
+                SELECT table_name
+                FROM unnest(%s::text[]) AS table_name
+                WHERE to_regclass(table_name) IS NULL;
+                """,
+                (list(REQUIRED_TABLES),),
+            )
+            missing_tables = [row[0] for row in cur.fetchall()]
+            if missing_tables:
+                raise MissingDatabaseTablesError(
+                    database,
+                    schema,
+                    missing_tables,
+                )
+
             cur.execute("SELECT COUNT(*) FROM jobs;")
             jobs_result = cur.fetchone()
             if jobs_result is None:
@@ -114,16 +148,20 @@ try:
         hide_index=True
     )
 
-
-except psycopg.errors.UndefinedTable:
-    st.error(
-        "The database is missing a required table. Run "
-        "`src/schema.sql` against the deployment database, then refresh."
+except MissingDatabaseTablesError as error:
+    st.error(str(error))
+    st.info(
+        "Check the database name and schema above against the database "
+        "where you ran the schema. DATABASE_URL is not shown."
     )
+except psycopg.errors.UndefinedTable as error:
+    st.error("A required database table could not be found.")
+    st.exception(error)
 except psycopg.OperationalError as error:
     st.error(
         "Unable to connect to the database. Verify DATABASE_URL, the "
-        "database's availability, and its network access settings."
+        "database's availability, network access, and permission to create "
+        "tables."
     )
     st.exception(error)
 except psycopg.Error as error:
