@@ -1,4 +1,3 @@
-
 import pandas as pd
 import streamlit as st
 import plotly.express as px
@@ -20,7 +19,6 @@ def get_connection():
         st.secrets["DATABASE_URL"],
         connect_timeout=10
     )
-
 
 @st.cache_data(ttl=60)
 def load_data():
